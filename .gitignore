@@ -1,0 +1,7 @@
+lunches.csv
+orders.csv
+
+data
+data/uploads/lunches/*
+
+node_modules
