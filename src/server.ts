@@ -360,23 +360,34 @@ app.post('/api/orders', async (req, res) => {
 
 app.put('/api/orders/:id', async (req, res) => {
   try {
-    const id = req.params.id
-    const rows = await readCsv(ORDERS_FILE, ORDERS_HEADER)
-    const idx = rows.findIndex(r => r.id === id)
-    if (idx === -1) return res.status(404).json({ error: 'not found'})
-    const updatedBody = req.body as Partial<OrderType>
-    const updated = serializeOrderForCsv({
-      ...deserializeOrderFromCsv(rows[idx]) as any,
+    const id = req.params.id;
+    const rows = await readCsv(ORDERS_FILE, ORDERS_HEADER);
+    const idx = rows.findIndex(r => r.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'not found' });
+
+    const updatedBody = req.body as Partial<OrderType>;
+
+    // recuperar la representación actual y mezclar con los cambios
+    const existing = deserializeOrderFromCsv(rows[idx]);
+    const merged: OrderType = {
+      ...existing,
       ...updatedBody,
       id
-    } as OrderType)
-    rows[idx] = updated
-    await writeCsv(ORDERS_FILE, ORDERS_HEADER, rows)
-    res.json({ ok: true})
+    };
+
+    // serializar para CSV y escribir
+    const serialized = serializeOrderForCsv(merged);
+    rows[idx] = serialized;
+    await writeCsv(ORDERS_FILE, ORDERS_HEADER, rows);
+
+    // devolver la versión deserializada (tal como espera el frontend)
+    const deserializedUpdated = deserializeOrderFromCsv(serialized);
+    res.json({ ok: true, updated: deserializedUpdated });
   } catch (err : any) {
     res.status(500).json({ error: err.message || String(err) })
   }
 });
+
 
 app.delete('/api/orders/:id', async (req, res) => {
   try {
