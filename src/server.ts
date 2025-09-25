@@ -35,6 +35,7 @@ type OrderType = {
   time: string;
   date: string | Date;
   orderState: OrderState;
+  total?: number;
 }
 
 // App Express
@@ -55,7 +56,19 @@ const LUNCHES_FILE = path.join(LUNCHES_DIR, 'lunches.csv')
 const ORDERS_FILE = path.join(ORDERS_DIR, 'orders.csv')
 
 const LUNCHES_HEADER = [ 'id', 'title', 'imagen', 'price', 'tags' ]
-const ORDERS_HEADER = [ 'id', 'towerNum', 'apto', 'customer', 'phoneNum', 'payMethod', 'lunch', 'details', 'time', 'date', 'orderState']
+const ORDERS_HEADER = [ 'id', 'towerNum', 'apto', 'customer', 'phoneNum', 'payMethod', 'lunch', 'details', 'time', 'date', 'orderState', 'total' ]
+
+const computeTotalFromLunchArray = (items: any[] = []) => {
+  try {
+    return items.reduce((sum, it) => {
+      const price = typeof it.price === 'number' ? it.price : Number(it.price || 0)
+      const qty = typeof it.quantity === 'number' ? it.quantity : Number(it.quantity || 0)
+      return sum + (price * qty)
+    }, 0)
+  } catch {
+    return 0
+  }
+}
 
 
 const ensureDirs = async () => {
@@ -152,14 +165,15 @@ const serializeOrderForCsv = (order: OrderType) => ({
   id: order.id,
   towerNum: order.towerNum,
   apto: String(order.apto),
-  customer: order.customer,
-  phoneNum: String(order.phoneNum),
+  customer: order.customer ?? '',
+  phoneNum: String(order.phoneNum ?? 0),
   payMethod: JSON.stringify(order.payMethod || {}),
   lunch: JSON.stringify(order.lunch || []),
   details: order.details || '',
   time: order.time || '',
-  date: (order.date instanceof Date) ? order.date.toString() : String(order.date || ''),
-  orderState: order.orderState || ''
+  date: (order.date instanceof Date) ? order.date.toISOString() : String(order.date || ''),
+  orderState: order.orderState || '',
+  total: String(typeof order.total === 'number' ? order.total : computeTotalFromLunchArray(order.lunch || []) )
 });
 
 const deserializeOrderFromCsv = (row: Record<string, string>): OrderType => ({
@@ -172,7 +186,7 @@ const deserializeOrderFromCsv = (row: Record<string, string>): OrderType => ({
     try { 
       return JSON.parse(row.payMethod);
     } catch { 
-      return {}
+      return { id: '', label: '', image: '' }
     }
   })(),
   lunch: (() => { 
@@ -186,8 +200,16 @@ const deserializeOrderFromCsv = (row: Record<string, string>): OrderType => ({
   details: row.details,
   time: row.time,
   date: row.date,
-  orderState: row.orderState as OrderState
+  orderState: row.orderState as OrderState,
+  total: (() => {
+    const t = row.total
+    const n = Number(t)
+    return isNaN(n) ? computeTotalFromLunchArray((() => {
+      try { return JSON.parse(row.lunch) } catch { return [] }
+    })()) : n
+  })()
 });
+
 
 // Inicialización
 (async () => {
@@ -338,6 +360,12 @@ app.post('/api/orders', async (req, res) => {
   try {
     const orderBody = req.body as Partial<OrderType>
     const id = orderBody.id || uuidv4()
+    // asegurar que lunch tenga quantity por item
+    const lunchItems = (orderBody.lunch || []).map((it: any) => ({
+      ...it,
+      quantity: typeof it.quantity === 'number' ? it.quantity : Number(it.quantity || 1)
+    }))
+    const total = computeTotalFromLunchArray(lunchItems)
     const order: OrderType = {
       id,
       towerNum: orderBody.towerNum || '',
@@ -345,11 +373,12 @@ app.post('/api/orders', async (req, res) => {
       customer: orderBody.customer || '',
       phoneNum: orderBody.phoneNum ?? 0,
       payMethod: orderBody.payMethod || { id: '', label: '', image: ''},
-      lunch: orderBody.lunch || [],
+      lunch: lunchItems,
       details: orderBody.details || '',
       time: orderBody.time || '',
       date: orderBody.date || new Date().toISOString(),
-      orderState: orderBody.orderState || 'pendiente'
+      orderState: orderBody.orderState || 'pendiente',
+      total
     }
     await appendCsv(ORDERS_FILE, ORDERS_HEADER, serializeOrderForCsv(order))
     res.status(201).json({ ok: true, order})
@@ -358,32 +387,52 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
+
 app.put('/api/orders/:id', async (req, res) => {
   try {
     const id = req.params.id;
     const rows = await readCsv(ORDERS_FILE, ORDERS_HEADER);
     const idx = rows.findIndex(r => r.id === id);
     if (idx === -1) return res.status(404).json({ error: 'not found' });
-
     const updatedBody = req.body as Partial<OrderType>;
-
-    // recuperar la representación actual y mezclar con los cambios
+    // recuperar la representación actual
     const existing = deserializeOrderFromCsv(rows[idx]);
+    // normalizar lunch: tomar updatedBody.lunch si existe, si no existing.lunch
+    const mergedLunch = (() => {
+      const candidate = updatedBody.lunch ?? existing.lunch ?? [];
+      return (candidate as any[]).map(it => ({
+        id: it.id ?? (it as any).id ?? '',
+        title: it.title ?? '',
+        imagen: it.imagen ?? '',
+        price: typeof it.price === 'number' ? it.price : Number(it.price ?? 0),
+        tags: it.tags ?? [],
+        quantity: typeof it.quantity === 'number' ? it.quantity : Number((it as any).quantity ?? 1),
+      }));
+    })();
+    // construir merged: mezclar existing con updatedBody (con cuidado para tipos)
     const merged: OrderType = {
-      ...existing,
-      ...updatedBody,
-      id
+      id,
+      towerNum: updatedBody.towerNum ?? existing.towerNum,
+      apto: updatedBody.apto ?? existing.apto,
+      customer: updatedBody.customer ?? existing.customer,
+      phoneNum: updatedBody.phoneNum ?? existing.phoneNum,
+      payMethod: updatedBody.payMethod ?? existing.payMethod ?? { id: '', label: '', image: '' },
+      lunch: mergedLunch,
+      details: updatedBody.details ?? existing.details ?? '',
+      time: updatedBody.time ?? existing.time ?? '',
+      date: updatedBody.date ?? existing.date ?? new Date().toISOString(),
+      orderState: updatedBody.orderState ?? existing.orderState ?? 'pendiente',
+      total: typeof updatedBody.total === 'number' ? updatedBody.total : computeTotalFromLunchArray(mergedLunch)
     };
-
-    // serializar para CSV y escribir
+    // asegurarse fecha serializada como ISO al escribir
     const serialized = serializeOrderForCsv(merged);
     rows[idx] = serialized;
     await writeCsv(ORDERS_FILE, ORDERS_HEADER, rows);
-
     // devolver la versión deserializada (tal como espera el frontend)
     const deserializedUpdated = deserializeOrderFromCsv(serialized);
     res.json({ ok: true, updated: deserializedUpdated });
-  } catch (err : any) {
+  } catch (err: any) {
+    console.error('PUT /api/orders/:id error:', err);
     res.status(500).json({ error: err.message || String(err) })
   }
 });
