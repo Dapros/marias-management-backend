@@ -2,7 +2,7 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
-import { ensureDirs, ensureFileWithHeader, LUNCHES_FILE, ORDERS_FILE, LUNCHES_HEADER, ORDERS_HEADER } from './backend/storage';
+import { ensureDirs, ensureFileWithHeader, ensureBackupsDirs, LUNCHES_FILE, ORDERS_FILE, LUNCHES_HEADER, ORDERS_HEADER } from './backend/storage';
 import lunchesRouter from './backend/routes/lunches'
 import ordersRouter from './backend/routes/orders'
 
@@ -17,7 +17,8 @@ app.use(cors({
 
 // inicializar dirs / archivos (igual que antes)
 (async () => {
-  await ensureDirs();
+  await ensureDirs()
+  await ensureBackupsDirs()
   await ensureFileWithHeader(LUNCHES_FILE, LUNCHES_HEADER)
   await ensureFileWithHeader(ORDERS_FILE, ORDERS_HEADER)
 })()
