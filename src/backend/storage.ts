@@ -4,33 +4,37 @@ import fse from 'fs-extra';
 import os from 'os';
 import csvParser from 'csv-parser';
 import { createObjectCsvWriter } from 'csv-writer';
-import type { LunchType, OrderType } from './types';
+import type { ExpenseType, LunchType, OrderType } from './types';
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data')
 export const LUNCHES_DIR = path.join(DATA_DIR, 'lunches')
 export const ORDERS_DIR = path.join(DATA_DIR, 'orders')
+export const EXPENSES_DIR = path.join(DATA_DIR, 'expenses')
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads')
 export const LUNCH_IMAGES_DIR = path.join(UPLOADS_DIR, 'lunches')
 export const LUNCHES_FILE = path.join(LUNCHES_DIR, 'lunches.csv')
 export const ORDERS_FILE = path.join(ORDERS_DIR, 'orders.csv')
+export const EXPENSES_FILE = path.join(EXPENSES_DIR, 'expenses.csv')
 
 // backups automaticos
 export const BACKUPS_DIR = path.join(DATA_DIR, 'backups')
 export const BACKUP_LUNCHES_DIR = path.join(BACKUPS_DIR, 'lunches')
 export const BACKUP_ORDERS_DIR = path.join(BACKUPS_DIR, 'orders')
+export const BACKUP_EXPENSES_DIR = path.join(BACKUPS_DIR, 'expenses')
 
 export const LUNCHES_HEADER = [ 'id', 'title', 'imagen', 'price', 'tags' ]
 export const ORDERS_HEADER = [ 'id', 'towerNum', 'apto', 'customer', 'phoneNum', 'payMethod', 'lunch', 'details', 'time', 'date', 'orderState', 'total' ]
+export const EXPENSES_HEADER = [ 'id', 'kind', 'title', 'description', 'amount', 'time', 'date' ]
 
 export const computeTotalFromLunchArray = (items: any[] = []) => {
   try {
     return items.reduce((sum, it) => {
       const price = typeof it.price === 'number' ? it.price : Number(it.price || 0)
       const qty = typeof it.quantity === 'number' ? it.quantity : Number(it.quantity || 0)
-      return sum + (price * qty);
-    }, 0);
+      return sum + (price * qty)
+    }, 0)
   } catch {
-    return 0;
+    return 0
   }
 }
 
@@ -39,12 +43,14 @@ export const ensureBackupsDirs = async () => {
   await fse.ensureDir(BACKUPS_DIR)
   await fse.ensureDir(BACKUP_LUNCHES_DIR)
   await fse.ensureDir(BACKUP_ORDERS_DIR)
+  await fse.ensureDir(BACKUP_EXPENSES_DIR)
 }
 
 // ensure dirs principales
 export const ensureDirs = async () => {
   await fse.ensureDir(LUNCHES_DIR)
   await fse.ensureDir(ORDERS_DIR)
+  await fse.ensureDir(EXPENSES_DIR) 
   await fse.ensureDir(LUNCH_IMAGES_DIR)
 }
 
@@ -71,28 +77,29 @@ const timestampNow = () => {
 // funcion para hacer la copia de backup
 export const backupCsvAtomic = async (filePath: string) => {
   try {
-    if (!fs.existsSync(filePath)) return;
-    const base = path.basename(filePath);
-    const ts = timestampNow();
-    let destDir = BACKUPS_DIR;
-    if (/lunches\.csv$/i.test(base)) destDir = BACKUP_LUNCHES_DIR;
-    else if (/orders\.csv$/i.test(base)) destDir = BACKUP_ORDERS_DIR;
+    if (!fs.existsSync(filePath)) return
+    const base = path.basename(filePath)
+    const ts = timestampNow()
+    let destDir = BACKUPS_DIR
+    if (/lunches\.csv$/i.test(base)) destDir = BACKUP_LUNCHES_DIR
+    else if (/orders\.csv$/i.test(base)) destDir = BACKUP_ORDERS_DIR
+    else if (/expenses\.csv$/i.test(base)) destDir = BACKUP_EXPENSES_DIR
 
-    const nameNoExt = base.replace(/\.csv$/i, '');
-    const destName = `${nameNoExt}-${ts}.csv`;
-    const destPath = path.join(destDir, destName);
-    const tmpPath = path.join(os.tmpdir(), `${destName}.tmp`);
+    const nameNoExt = base.replace(/\.csv$/i, '')
+    const destName = `${nameNoExt}-${ts}.csv`
+    const destPath = path.join(destDir, destName)
+    const tmpPath = path.join(os.tmpdir(), `${destName}.tmp`)
 
     // copiar a tmp file primero
-    await fse.copy(filePath, tmpPath, { overwrite: true });
+    await fse.copy(filePath, tmpPath, { overwrite: true })
     // renombrar (movimiento atómico en la mayoría de FS locales)
-    await fse.move(tmpPath, destPath, { overwrite: true });
+    await fse.move(tmpPath, destPath, { overwrite: true })
 
     // opcional: cleanupOldBackups(destDir, 20)
-    return destPath;
+    return destPath
   } catch (err) {
-    console.error('Error creando backup CSV (atomic):', err);
-    return;
+    console.error('Error creando backup CSV (atomic):', err)
+    return
   }
 }
 
@@ -246,4 +253,24 @@ export const deserializeOrderFromCsv = (row: Record<string, string>): OrderType 
     if (!isNaN(n)) return n
     try { return computeTotalFromLunchArray(JSON.parse(row.lunch)) } catch { return 0; }
   })()
+})
+
+export const serializeExpenseForCsv = (expense: ExpenseType) => ({
+  id: expense.id,
+  kind: expense.kind,
+  title: expense.title,
+  description: expense.description ?? '',
+  amount: String(expense.amount ?? 0),
+  time: expense.time ?? '',
+  date: (expense.date instanceof Date) ? expense.date.toISOString() : String(expense.date ?? '')
+})
+
+export const deserializeExpenseFromCsv = (row: Record<string, string>): ExpenseType => ({
+  id: row.id,
+  kind: (row.kind as ExpenseType['kind']) ?? 'third-party',
+  title: row.title,
+  description: row.description,
+  amount: Number(row.amount ?? 0),
+  time: row.time,
+  date: row.date
 })

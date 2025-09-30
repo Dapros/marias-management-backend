@@ -2,9 +2,10 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
-import { ensureDirs, ensureFileWithHeader, ensureBackupsDirs, LUNCHES_FILE, ORDERS_FILE, LUNCHES_HEADER, ORDERS_HEADER } from './backend/storage';
+import { ensureDirs, ensureFileWithHeader, ensureBackupsDirs, LUNCHES_FILE, ORDERS_FILE, LUNCHES_HEADER, ORDERS_HEADER, EXPENSES_FILE, EXPENSES_HEADER } from './backend/storage';
 import lunchesRouter from './backend/routes/lunches'
 import ordersRouter from './backend/routes/orders'
+import expensesRouter from './backend/routes/expenses'
 
 const app = express()
 
@@ -21,6 +22,7 @@ app.use(cors({
   await ensureBackupsDirs()
   await ensureFileWithHeader(LUNCHES_FILE, LUNCHES_HEADER)
   await ensureFileWithHeader(ORDERS_FILE, ORDERS_HEADER)
+  await ensureFileWithHeader(EXPENSES_FILE, EXPENSES_HEADER)
 })()
 
 // servir uploads (la ruta pública debe apuntar al mismo UPLOADS_DIR que definiste en storage.ts)
@@ -35,6 +37,7 @@ app.get('/api/test', (req, res) => {
 // registrar rutas
 app.use('/api/lunches', lunchesRouter)
 app.use('/api/orders', ordersRouter)
+app.use('/api/expenses', expensesRouter)
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000
 app.listen(PORT, () => console.log(`Backend listening http://localhost:${PORT}`))

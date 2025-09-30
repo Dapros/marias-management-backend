@@ -29,3 +29,15 @@ export type OrderType = {
   orderState: OrderState;
   total?: number;
 }
+
+export type ExpenseKind = 'purchase' | 'third-party'
+
+export type ExpenseType = {
+  id: string;
+  kind: ExpenseKind;
+  title: string;
+  description?: string;
+  amount: number;
+  time?: string;
+  date?: string | Date;
+}
